@@ -49,6 +49,13 @@ nav button.on{color:var(--pri);font-weight:700;border-top:3px solid var(--pri);m
 .chk input{width:auto}
 h2{font-size:16px;margin:0 0 4px}
 p.h{font-size:13px;color:var(--mut);margin:4px 0}
+select{width:100%;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chips button{border:1px solid var(--bd);background:var(--bg);color:var(--tx);border-radius:16px;padding:6px 10px;font-size:13px}
+.chips button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+.lin{display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd);font-size:14px}
+.lin span{flex:1}
+.lin button{border:1px solid var(--pri);color:var(--pri);background:none;border-radius:8px;padding:4px 8px;font-size:12px}
 #resultados{margin-top:6px}
 #resultados .item{border:1px solid var(--bd);border-radius:8px;margin-top:6px}
 </style>
@@ -92,9 +99,13 @@ p.h{font-size:13px;color:var(--mut);margin:4px 0}
     <button class="btn sec" id="btn-quitar-foto" hidden>Quitar foto</button>
     <input type="file" id="foto-cam" accept="image/*" capture="environment" hidden>
     <input type="file" id="foto-gal" accept="image/*" hidden>
-    <button class="btn sec" id="btn-ocr">📄 Leer datos de la página legal (foto)</button>
+    <p class="h" style="margin-top:12px">Completar desde una foto:</p>
+    <button class="btn sec" id="btn-ocr-portada">🏷️ Leer portada (título y autor)</button>
+    <button class="btn sec" id="btn-ocr">📄 Leer página legal (ISBN, año, editorial)</button>
+    <button class="btn sec" id="btn-ocr-resumen">📝 Leer resumen (contratapa)</button>
     <input type="file" id="foto-ocr" accept="image/*" hidden>
     <div id="ocr-msg" class="h"></div>
+    <div id="ocr-lineas"></div>
     <details id="ocr-det" hidden><summary>Texto leído de la foto</summary><textarea id="ocr-txt" rows="8" readonly></textarea></details>
     <label for="f-isbn">ISBN</label><input id="f-isbn" inputmode="numeric">
     <label for="f-titulo">Título *</label><input id="f-titulo">
@@ -106,7 +117,12 @@ p.h{font-size:13px;color:var(--mut);margin:4px 0}
       <div><label for="f-paginas">Páginas</label><input id="f-paginas" inputmode="numeric"></div>
       <div><label for="f-idioma">Idioma</label><input id="f-idioma"></div>
     </div>
+    <label for="f-genero">Género</label><input id="f-genero" list="dl-genero" placeholder="Elegí uno o escribí otro" autocomplete="off">
+    <div class="chips" id="chips-genero"></div><datalist id="dl-genero"></datalist>
+    <label for="f-cdd">Clasificación CDD (Dewey)</label><input id="f-cdd" list="dl-cdd" placeholder="Ej: 863" autocomplete="off">
+    <p class="h">Número Dewey: elegí de la lista o escribilo completo (ej. 863.6). La lista son los grandes grupos.</p><datalist id="dl-cdd"></datalist>
     <label for="f-ubicacion">Ubicación</label><input id="f-ubicacion" placeholder="Ej: Living, estante 2">
+    <label for="f-resumen">Resumen</label><textarea id="f-resumen" rows="5" placeholder="Escribilo o leelo de la contratapa con la cámara"></textarea>
     <label for="f-notas">Notas</label><textarea id="f-notas" rows="2"></textarea>
     <button class="btn" id="btn-save">Guardar libro</button>
     <div class="row">
@@ -126,11 +142,20 @@ p.h{font-size:13px;color:var(--mut);margin:4px 0}
 <section id="t-more" hidden>
   <div class="card">
     <h2>Exportar lista</h2>
-    <p class="h">Para subir a Aguapey u otro sistema. Columnas: ISBN, Título, Autor, Editorial, Colección, Año, Páginas, Idioma, Ubicación, Notas.</p>
+    <p class="h">Para planillas (Excel) y otros sistemas. Para Aguapey o Koha usá el MARC de más abajo. Columnas: ISBN, Título, Autor, Editorial, Colección, Género, CDD, Año, Páginas, Idioma, Ubicación, Notas, Resumen.</p>
     <button class="btn" id="x-csv">Descargar CSV (separador ;)</button>
     <button class="btn sec" id="x-csv2">Descargar CSV (separador ,)</button>
     <button class="btn sec" id="x-xl">CSV para abrir en Excel (ISBN como texto)</button>
     <button class="btn sec" id="x-share">Compartir archivo…</button>
+  </div>
+  <div class="card">
+    <h2>Para Aguapey y Koha (MARC21)</h2>
+    <p class="h">Aguapey importa MARC21 en formato ISO (.iso). Koha acepta MARC (.mrc) o MARCXML (.xml). Incluyen título, autor, ISBN, editorial, año, colección, género, CDD (campo 082), resumen (520) y ubicación.</p>
+    <label for="marc-enc">Codificación de los acentos</label>
+    <select id="marc-enc"><option value="utf8">UTF-8 (recomendado)</option><option value="latin1">ANSI / Latin-1 (programas viejos tipo ISIS)</option></select>
+    <button class="btn" id="m-iso">Descargar MARC21 .iso (Aguapey)</button>
+    <button class="btn sec" id="m-mrc">Descargar MARC21 .mrc (Koha)</button>
+    <button class="btn sec" id="m-xml">Descargar MARCXML .xml (Koha)</button>
   </div>
   <div class="card">
     <h2>Copia de seguridad / compartir con otro teléfono</h2>
@@ -154,7 +179,7 @@ p.h{font-size:13px;color:var(--mut);margin:4px 0}
 <script>
 const $ = s => document.querySelector(s);
 const KEY = 'biblioteca_v1', CFG = 'biblioteca_cfg';
-const F = ['isbn','titulo','autor','editorial','coleccion','anio','paginas','idioma','ubicacion','notas'];
+const F = ['isbn','titulo','autor','editorial','coleccion','anio','paginas','idioma','genero','cdd','ubicacion','resumen','notas'];
 let libros = [], editId = null, scanning = false, stream = null, detector = null, h5 = null, lastCode = '', lastTime = 0;
 
 /* Almacenamiento en IndexedDB (aguanta muchas fotos); migra lo viejo de localStorage */
@@ -327,7 +352,7 @@ function setCover(u) {
   if (u) { i.src = u; i.hidden = false; } else { i.removeAttribute('src'); i.hidden = true; }
   $('#btn-quitar-foto').hidden = !u;
 }
-function fill(d) { F.forEach(k => { if (d[k] !== undefined) $('#f-' + k).value = d[k]; }); setCover(d.portada || ''); }
+function fill(d) { F.forEach(k => { if (d[k] !== undefined) $('#f-' + k).value = d[k]; }); setCover(d.portada || ''); marcarChips(); }
 
 /* ---------- Lectura de la página legal (OCR) ---------- */
 function isbnValido(c) {
@@ -397,6 +422,148 @@ function parsePagina(texto) {
   return out;
 }
 
+/* ---------- Clasificación: géneros y CDD (Dewey) ---------- */
+const GENEROS = ['Novela', 'Novela histórica', 'Terror', 'Policial / Misterio', 'Ciencia ficción', 'Fantasía', 'Romance', 'Aventuras', 'Cuentos', 'Poesía', 'Teatro', 'Ensayo', 'Biografía', 'Historia', 'Infantil / Juvenil', 'Autoayuda', 'Divulgación', 'Técnico / Manual', 'Otro'];
+const DEWEY = [
+  ['000', 'Generalidades'], ['010', 'Bibliografías'], ['020', 'Bibliotecología y ciencias de la información'], ['030', 'Enciclopedias generales'], ['050', 'Publicaciones seriadas'], ['060', 'Organizaciones y museología'], ['070', 'Periodismo y medios'], ['080', 'Colecciones generales'], ['090', 'Manuscritos y libros raros'],
+  ['100', 'Filosofía y psicología'], ['110', 'Metafísica'], ['120', 'Epistemología'], ['130', 'Parapsicología y ocultismo'], ['140', 'Escuelas filosóficas'], ['150', 'Psicología'], ['160', 'Lógica'], ['170', 'Ética'], ['180', 'Filosofía antigua y oriental'], ['190', 'Filosofía occidental moderna'],
+  ['200', 'Religión'], ['210', 'Filosofía de la religión'], ['220', 'Biblia'], ['230', 'Cristianismo y teología'], ['240', 'Teología moral cristiana'], ['250', 'Órdenes e iglesia local'], ['260', 'Teología social'], ['270', 'Historia del cristianismo'], ['280', 'Denominaciones cristianas'], ['290', 'Otras religiones'],
+  ['300', 'Ciencias sociales'], ['310', 'Estadística'], ['320', 'Ciencia política'], ['330', 'Economía'], ['340', 'Derecho'], ['350', 'Administración pública y militar'], ['360', 'Problemas y servicios sociales'], ['370', 'Educación'], ['380', 'Comercio, comunicaciones y transporte'], ['390', 'Costumbres y folclore'], ['398', 'Folclore'],
+  ['400', 'Lenguas'], ['410', 'Lingüística'], ['420', 'Inglés'], ['430', 'Alemán'], ['440', 'Francés'], ['450', 'Italiano y rumano'], ['460', 'Español y portugués'], ['470', 'Latín'], ['480', 'Griego'], ['490', 'Otras lenguas'],
+  ['500', 'Ciencias naturales y matemáticas'], ['510', 'Matemáticas'], ['520', 'Astronomía'], ['530', 'Física'], ['540', 'Química'], ['550', 'Ciencias de la tierra'], ['560', 'Paleontología'], ['570', 'Biología'], ['580', 'Plantas'], ['590', 'Animales'],
+  ['600', 'Tecnología'], ['610', 'Medicina y salud'], ['620', 'Ingeniería'], ['630', 'Agricultura'], ['640', 'Economía doméstica'], ['641', 'Cocina'], ['650', 'Administración'], ['660', 'Ingeniería química'], ['670', 'Manufactura'], ['680', 'Manufacturas específicas'], ['690', 'Construcción'],
+  ['700', 'Artes y recreación'], ['710', 'Urbanismo y paisaje'], ['720', 'Arquitectura'], ['730', 'Escultura y artes plásticas'], ['740', 'Dibujo y artes decorativas'], ['741.5', 'Historietas'], ['750', 'Pintura'], ['760', 'Grabado y artes gráficas'], ['770', 'Fotografía'], ['780', 'Música'], ['790', 'Artes escénicas y recreativas'], ['796', 'Deportes'],
+  ['800', 'Literatura'], ['808.8', 'Colecciones literarias'], ['810', 'Literatura estadounidense en inglés'], ['820', 'Literatura inglesa'], ['830', 'Literatura alemana'], ['840', 'Literatura francesa'], ['850', 'Literatura italiana y rumana'], ['860', 'Literatura española y portuguesa'], ['861', 'Poesía en español'], ['862', 'Teatro en español'], ['863', 'Narrativa en español (novela, cuentos)'], ['864', 'Ensayos en español'], ['868', 'Misceláneas en español'], ['870', 'Literatura latina'], ['880', 'Literatura griega'], ['890', 'Otras literaturas'],
+  ['900', 'Historia y geografía'], ['910', 'Geografía y viajes'], ['920', 'Biografías y genealogía'], ['930', 'Historia antigua'], ['940', 'Historia de Europa'], ['950', 'Historia de Asia'], ['960', 'Historia de África'], ['970', 'Historia de América del Norte'], ['980', 'Historia de América del Sur'], ['982', 'Historia de Argentina'], ['990', 'Historia de otras áreas']
+];
+
+/* ---------- Lectura de portada y resumen (OCR) ---------- */
+const PARTICULAS = /^(de|del|la|las|los|y|van|von|da|di|el)$/i;
+const ARTICULOS = /^(el|la|los|las|un|una|del|de|al|y|en|con|por|para)$/i;
+function esNombre(t) {
+  if (/\d/.test(t)) return false;
+  const w = t.split(' ');
+  if (w.length < 2 || w.length > 5 || ARTICULOS.test(w[0])) return false;
+  return w.every((x, i) => /^\p{Lu}[\p{L}.'’-]*$/u.test(x) || (i > 0 && i < w.length - 1 && PARTICULAS.test(x)));
+}
+function aCapitalizada(t, modo) { // modo 'oracion' (título) o 'nombre'
+  const letras = t.replace(/[^\p{L}]/gu, '');
+  const may = (letras.match(/\p{Lu}/gu) || []).length;
+  if (!letras || may / letras.length < 0.7) return t; // ya tiene minúsculas: se deja como está
+  const low = t.toLowerCase();
+  if (modo === 'nombre') return low.split(' ').map((w, i) => (i > 0 && PARTICULAS.test(w)) ? w : w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  return low.charAt(0).toUpperCase() + low.slice(1);
+}
+function parsePortada(lines) { // lines: [{ t: texto, h: alto en px }]
+  const L = lines.map(l => ({ t: String(l.t).replace(/\s+/g, ' ').trim(), h: l.h || 0 })).filter(l => {
+    const letras = (l.t.match(/\p{L}/gu) || []).length;
+    return letras >= 3 && letras / l.t.length >= 0.6;
+  });
+  const out = { lineas: L.map(l => l.t) };
+  const usadas = new Set();
+  const cand = L.map((l, i) => ({ l, i })).filter(x => esNombre(x.l.t));
+  if (cand.length) { cand.sort((a, b) => b.l.h - a.l.h || a.i - b.i); out.autor = aCapitalizada(cand[0].l.t, 'nombre'); usadas.add(cand[0].i); }
+  L.forEach((l, i) => { if (/colecci[oó]n|grandes éxitos|\bserie\b/i.test(l.t)) { out.coleccion = l.t; usadas.add(i); } });
+  const rest = L.map((l, i) => ({ l, i })).filter(x => !usadas.has(x.i));
+  if (rest.length) {
+    const max = Math.max(...rest.map(x => x.l.h));
+    const base = rest.find(x => x.l.h === max);
+    let a = rest.indexOf(base), b = a;
+    while (a > 0 && rest[a - 1].l.h >= max * 0.8 && rest[a - 1].i === rest[a].i - 1) a--;
+    while (b < rest.length - 1 && rest[b + 1].l.h >= max * 0.8 && rest[b + 1].i === rest[b].i + 1) b++;
+    out.titulo = aCapitalizada(rest.slice(a, b + 1).map(x => x.l.t).join(' '), 'oracion');
+  }
+  return out;
+}
+function limpiarResumen(texto) {
+  const pars = String(texto || '').replace(/\r/g, '').split(/\n\s*\n/).map(p => {
+    let s = p.split('\n').map(l => l.trim()).filter(l => {
+      const letras = (l.match(/\p{L}/gu) || []).length;
+      return l && letras >= 3 && letras / l.length >= 0.5 && !/^ISBN/i.test(l);
+    }).join('\n');
+    s = s.replace(/(\p{L})-\n(\p{Ll})/gu, '$1$2').replace(/\n/g, ' ').replace(/[ \t]+/g, ' ').trim();
+    return s;
+  }).filter(p => (p.match(/\p{L}/gu) || []).length >= 15);
+  return pars.join('\n\n');
+}
+
+/* ---------- MARC 21 (ISO 2709 y MARCXML) ---------- */
+const LANG3 = { es: 'spa', en: 'eng', fr: 'fre', pt: 'por', it: 'ita', de: 'ger', ca: 'cat', la: 'lat' };
+function marcCampos(b) {
+  const lim = s => String(s == null ? '' : s).replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim();
+  const pad = (x, l = 2) => String(x).padStart(l, '0');
+  const hoy = new Date();
+  const yymmdd = pad(hoy.getFullYear() % 100) + pad(hoy.getMonth() + 1) + pad(hoy.getDate());
+  const ts = hoy.getFullYear() + pad(hoy.getMonth() + 1) + pad(hoy.getDate()) + pad(hoy.getHours()) + pad(hoy.getMinutes()) + pad(hoy.getSeconds()) + '.0';
+  const anio = /^\d{4}$/.test(lim(b.anio)) ? lim(b.anio) : 'uuuu';
+  const id = lim(b.idioma).toLowerCase();
+  const lang = LANG3[id.slice(0, 2)] || (/^[a-z]{3}$/.test(id) ? id : 'spa');
+  const f = [];
+  f.push({ t: '001', d: lim(b.id) || '0' });
+  f.push({ t: '005', d: ts });
+  f.push({ t: '008', d: yymmdd + 's' + anio + '    ' + 'xx ' + '    ' + ' ' + ' ' + '    ' + ' ' + '0' + '0' + '0' + ' ' + '|' + ' ' + lang + ' ' + 'd' });
+  const sd = (t, i1, i2, s) => { const ss = s.filter(x => lim(x[1])).map(x => [x[0], lim(x[1])]); if (ss.length) f.push({ t, i1, i2, s: ss }); };
+  if (lim(b.isbn)) sd('020', ' ', ' ', [['a', lim(b.isbn).replace(/[^0-9Xx]/g, '')]]);
+  if (lim(b.cdd)) sd('082', '0', '4', [['a', lim(b.cdd)]]);
+  const autores = String(b.autor || '').split(';').map(lim).filter(Boolean);
+  autores.forEach((a, i) => sd(i === 0 ? '100' : '700', a.indexOf(',') >= 0 ? '1' : '0', ' ', [['a', a]]));
+  const tit = lim(b.titulo), p = tit.indexOf(': ');
+  const a245 = p > 0 ? [tit.slice(0, p) + ' :', tit.slice(p + 2)] : [tit, ''];
+  const tail = autores.length ? ' /' : '.';
+  const s245 = a245[1] ? [['a', a245[0]], ['b', a245[1] + tail]] : [['a', a245[0] + tail]];
+  if (autores.length) s245.push(['c', autores.join('; ') + '.']);
+  sd('245', autores.length ? '1' : '0', '0', s245);
+  if (lim(b.editorial) || lim(b.anio)) sd('260', ' ', ' ', [['b', lim(b.editorial) ? lim(b.editorial) + (lim(b.anio) ? ',' : '.') : ''], ['c', lim(b.anio) ? lim(b.anio) + '.' : '']]);
+  if (lim(b.paginas)) sd('300', ' ', ' ', [['a', lim(b.paginas) + ' p.']]);
+  if (lim(b.coleccion)) sd('490', '0', ' ', [['a', lim(b.coleccion)]]);
+  if (lim(b.notas)) sd('500', ' ', ' ', [['a', lim(b.notas)]]);
+  if (lim(b.resumen)) sd('520', ' ', ' ', [['a', lim(b.resumen).slice(0, 3000)]]);
+  if (lim(b.genero)) sd('655', ' ', '4', [['a', lim(b.genero)]]);
+  if (lim(b.ubicacion)) sd('852', ' ', ' ', [['c', lim(b.ubicacion)]]);
+  const orden = f.map((x, i) => [x, i]).sort((u, v) => (u[0].t < v[0].t ? -1 : u[0].t > v[0].t ? 1 : u[1] - v[1]));
+  return orden.map(x => x[0]);
+}
+function marcBytes(str, latin) {
+  if (!latin) return new TextEncoder().encode(str);
+  const s = str.normalize('NFC').replace(/[‘’‚]/g, "'").replace(/[“”„]/g, '"').replace(/[–—]/g, '-').replace(/…/g, '...');
+  const o = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); o[i] = c < 256 ? c : 63; }
+  return o;
+}
+function marcIso(campos, latin) {
+  const Z = String.fromCharCode(0x1e), U = String.fromCharCode(0x1f);
+  const datos = campos.map(c => (c.d !== undefined ? c.d : c.i1 + c.i2 + c.s.map(x => U + x[0] + x[1]).join('')) + Z).map(d => marcBytes(d, latin));
+  let dir = '', pos = 0;
+  campos.forEach((c, i) => { dir += c.t + String(datos[i].length).padStart(4, '0') + String(pos).padStart(5, '0'); pos += datos[i].length; });
+  const base = 24 + dir.length + 1, total = base + pos + 1;
+  const head = String(total).padStart(5, '0') + 'nam' + ' ' + (latin ? ' ' : 'a') + '22' + String(base).padStart(5, '0') + ' a 4500' + dir + Z;
+  const out = new Uint8Array(total);
+  for (let i = 0; i < head.length; i++) out[i] = head.charCodeAt(i);
+  let o = head.length;
+  datos.forEach(d => { out.set(d, o); o += d.length; });
+  out[o] = 0x1d;
+  return out;
+}
+function marcIsoLote(lista, latin) {
+  const recs = lista.map(b => marcIso(marcCampos(b), latin));
+  const n = recs.reduce((s, r) => s + r.length, 0), out = new Uint8Array(n);
+  let o = 0; recs.forEach(r => { out.set(r, o); o += r.length; });
+  return out;
+}
+function marcXmlLote(lista) {
+  const x = s => String(s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  let out = '<?xml version="1.0" encoding="UTF-8"?>\n<collection xmlns="http://www.loc.gov/MARC21/slim">\n';
+  lista.forEach(b => {
+    out += '<record>\n  <leader>00000nam a2200000 a 4500</leader>\n';
+    marcCampos(b).forEach(c => {
+      if (c.d !== undefined) out += '  <controlfield tag="' + c.t + '">' + x(c.d) + '</controlfield>\n';
+      else out += '  <datafield tag="' + c.t + '" ind1="' + x(c.i1) + '" ind2="' + x(c.i2) + '">' + c.s.map(s => '<subfield code="' + s[0] + '">' + x(s[1]) + '</subfield>').join('') + '</datafield>\n';
+    });
+    out += '</record>\n';
+  });
+  return out + '</collection>\n';
+}
+
 let ocrWorker = null;
 function ocrMsg(t, cls) { const e = $('#ocr-msg'); e.textContent = t; e.style.color = cls === 'err' ? 'var(--err)' : cls === 'ok' ? 'var(--ok)' : ''; }
 function cargarScript(src) {
@@ -427,9 +594,53 @@ function fotoACanvas(file, max) {
     img.src = url;
   });
 }
-async function leerPagina(file) {
+let ocrModo = 'legal', ocrLineasTxt = [];
+function poner(id, v, nombre, lista) { if (v && !$('#f-' + id).value.trim()) { $('#f-' + id).value = v; lista.push(nombre); } }
+async function ocrLegal(txt) {
+  const p = parsePagina(txt), hallados = [];
+  if (p.isbnRaw) poner('isbn', p.isbnOk ? cleanIsbn(p.isbnRaw) : p.isbnRaw, 'ISBN', hallados);
+  poner('anio', p.anio, 'año', hallados); poner('editorial', p.editorial, 'editorial', hallados); poner('autor', p.autor, 'autor', hallados); poner('coleccion', p.coleccion, 'colección', hallados);
+  let extra = '';
+  const isbn = $('#f-isbn').value.trim();
+  if (p.isbnOk && isbn && !$('#f-titulo').value.trim()) {
+    ocrMsg('Leído. Buscando título y portada por ISBN…');
+    let d = null;
+    try { d = await fromGoogle(isbn); } catch (e) {}
+    if (!d || !d.titulo) { try { d = merge(d, await fromOL(isbn)); } catch (e) {} }
+    if (d && d.titulo) {
+      poner('titulo', d.titulo, 'título', hallados); poner('autor', d.autor, 'autor', hallados); poner('editorial', d.editorial, 'editorial', hallados);
+      poner('paginas', d.paginas, 'páginas', hallados); poner('idioma', d.idioma, 'idioma', hallados);
+      if (!$('#cover').dataset.src && d.portada) setCover(d.portada);
+      extra = ' El título y la portada vinieron de internet por ISBN: verificá que sean de TU libro.';
+    } else extra = ' No encontré el título por ISBN: escribilo vos (está en la tapa).';
+  } else if (!$('#f-titulo').value.trim()) extra = ' El título no está en esta página: escribilo vos o usá "Leer portada".';
+  if (!p.isbnRaw && !hallados.length) ocrMsg('No pude reconocer datos en esa foto. Probá con más luz, de frente y sin sombras, o cargalo a mano.', 'err');
+  else {
+    const mal = p.isbnRaw && !p.isbnOk;
+    ocrMsg((mal ? '⚠ Revisá el ISBN: el dígito verificador no cierra, puede estar mal leído. ' : '') + 'Completé: ' + (hallados.join(', ') || 'nada nuevo') + '.' + extra + ' Revisá todo antes de guardar.', mal ? 'err' : 'ok');
+  }
+}
+function ocrPortada(r) {
+  const lines = ((r.data && r.data.lines) || []).map(l => ({ t: l.text, h: l.bbox.y1 - l.bbox.y0 }));
+  const p = parsePortada(lines), hallados = [];
+  poner('titulo', p.titulo, 'título', hallados); poner('autor', p.autor, 'autor', hallados); poner('coleccion', p.coleccion, 'colección', hallados);
+  ocrLineasTxt = p.lineas;
+  $('#ocr-lineas').innerHTML = p.lineas.length ? '<p class="h">Líneas leídas. Si algo quedó mal, tocá cuál es título o autor (se suma al campo):</p>' +
+    p.lineas.map((t, i) => '<div class="lin"><span>' + esc(t) + '</span><button data-k="titulo" data-i="' + i + '">Título</button><button data-k="autor" data-i="' + i + '">Autor</button></div>').join('') : '';
+  if (!p.lineas.length) ocrMsg('No pude leer texto en la portada (letras muy decoradas o poca luz). Probá otra foto o escribilo.', 'err');
+  else ocrMsg((hallados.length ? 'Completé: ' + hallados.join(', ') + '. ' : 'No adiviné título ni autor. ') + 'Revisalo: las portadas con letras decoradas se leen peor.', hallados.length ? 'ok' : 'err');
+}
+function ocrResumen(txt) {
+  const s = limpiarResumen(txt);
+  if (!s) { ocrMsg('No pude leer un resumen en esa foto. Probá con más luz y de frente; abajo ves el texto crudo por si sirve.', 'err'); return; }
+  const el = $('#f-resumen'); el.value = el.value.trim() ? el.value.trim() + '\n\n' + s : s;
+  ocrMsg('Resumen cargado (' + s.length + ' caracteres). Revisalo: puede tener errores de lectura.', 'ok');
+}
+async function leerFoto(file, modo) {
   if (!file) return;
-  $('#btn-ocr').disabled = true;
+  const btns = ['#btn-ocr', '#btn-ocr-portada', '#btn-ocr-resumen'];
+  btns.forEach(s => $(s).disabled = true);
+  $('#ocr-lineas').innerHTML = '';
   try {
     ocrMsg('Preparando lector de texto…');
     const c = await fotoACanvas(file, 2000);
@@ -437,32 +648,10 @@ async function leerPagina(file) {
     const r = await w.recognize(c);
     const txt = (r.data && r.data.text) || '';
     $('#ocr-txt').value = txt; $('#ocr-det').hidden = false;
-    const p = parsePagina(txt), hallados = [];
-    const poner = (id, v, nombre) => { if (v && !$('#f-' + id).value.trim()) { $('#f-' + id).value = v; hallados.push(nombre); } };
-    if (p.isbnRaw) poner('isbn', p.isbnOk ? cleanIsbn(p.isbnRaw) : p.isbnRaw, 'ISBN');
-    poner('anio', p.anio, 'año'); poner('editorial', p.editorial, 'editorial'); poner('autor', p.autor, 'autor'); poner('coleccion', p.coleccion, 'colección');
-    let extra = '';
-    const isbn = $('#f-isbn').value.trim();
-    if (p.isbnOk && isbn && !$('#f-titulo').value.trim()) {
-      ocrMsg('Leído. Buscando título y portada por ISBN…');
-      let d = null;
-      try { d = await fromGoogle(isbn); } catch (e) {}
-      if (!d || !d.titulo) { try { d = merge(d, await fromOL(isbn)); } catch (e) {} }
-      if (d && d.titulo) {
-        poner('titulo', d.titulo, 'título'); poner('autor', d.autor, 'autor'); poner('editorial', d.editorial, 'editorial');
-        poner('paginas', d.paginas, 'páginas'); poner('idioma', d.idioma, 'idioma');
-        if (!$('#cover').dataset.src && d.portada) setCover(d.portada);
-        extra = ' El título y la portada vinieron de internet por ISBN: verificá que sean de TU libro.';
-      } else extra = ' No encontré el título por ISBN: escribilo vos (está en la tapa).';
-    } else if (!$('#f-titulo').value.trim()) extra = ' El título no está en esta página: escribilo vos (está en la tapa).';
-    if (!p.isbnRaw && !hallados.length) ocrMsg('No pude reconocer datos en esa foto. Probá con más luz, de frente y sin sombras, o cargalo a mano.', 'err');
-    else {
-      const mal = p.isbnRaw && !p.isbnOk;
-      ocrMsg((mal ? '⚠ Revisá el ISBN: el dígito verificador no cierra, puede estar mal leído. ' : '') + 'Completé: ' + (hallados.join(', ') || 'nada nuevo') + '.' + extra + ' Revisá todo antes de guardar.', mal ? 'err' : 'ok');
-    }
+    if (modo === 'portada') ocrPortada(r); else if (modo === 'resumen') ocrResumen(txt); else await ocrLegal(txt);
   } catch (e) {
     ocrMsg('No se pudo leer la foto: ' + (e && e.message ? e.message : e), 'err');
-  } finally { $('#btn-ocr').disabled = false; }
+  } finally { btns.forEach(s => $(s).disabled = false); }
 }
 
 /* Foto de tapa: se reduce a ~360px para que ocupe poco */
@@ -528,7 +717,7 @@ function limpiar(keepStatus) {
   F.forEach(k => $('#f-' + k).value = '');
   $('#f-ubicacion').value = $('#def-ubic').value;
   $('#f-coleccion').value = $('#def-col').value;
-  $('#ocr-msg').textContent = ''; $('#ocr-det').hidden = true; $('#ocr-txt').value = '';
+  $('#ocr-msg').textContent = ''; $('#ocr-det').hidden = true; $('#ocr-txt').value = ''; $('#ocr-lineas').innerHTML = ''; marcarChips();
   setCover(''); editId = null;
   $('#btn-del').hidden = true; $('#formcard').hidden = true; $('#formtitle').textContent = 'Datos del libro';
   if (!keepStatus) status('');
@@ -597,26 +786,42 @@ $('#btn-galeria').onclick = () => $('#foto-gal').click();
 $('#foto-cam').onchange = e => { procesarFoto(e.target.files[0]); e.target.value = ''; };
 $('#foto-gal').onchange = e => { procesarFoto(e.target.files[0]); e.target.value = ''; };
 $('#btn-quitar-foto').onclick = () => setCover('');
-$('#btn-ocr').onclick = () => $('#foto-ocr').click();
-$('#foto-ocr').onchange = e => { const f = e.target.files[0]; e.target.value = ''; leerPagina(f); };
+const pedirOcr = m => { ocrModo = m; $('#foto-ocr').click(); };
+$('#btn-ocr').onclick = () => pedirOcr('legal');
+$('#btn-ocr-portada').onclick = () => pedirOcr('portada');
+$('#btn-ocr-resumen').onclick = () => pedirOcr('resumen');
+$('#foto-ocr').onchange = e => { const f = e.target.files[0]; e.target.value = ''; leerFoto(f, ocrModo); };
+$('#ocr-lineas').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const t = ocrLineasTxt[+b.dataset.i], el = $('#f-' + b.dataset.k); if (t == null) return;
+  let v = aCapitalizada(t, b.dataset.k === 'autor' ? 'nombre' : 'oracion');
+  if (el.value.trim()) { if (v !== t) v = v.charAt(0).toLowerCase() + v.slice(1); el.value = el.value.trim() + ' ' + v; } else el.value = v;
+});
+/* Género (botones) y CDD (lista de sugerencias) */
+$('#dl-cdd').innerHTML = DEWEY.map(d => '<option value="' + d[0] + '" label="' + esc(d[1]) + '"></option>').join('');
+$('#dl-genero').innerHTML = GENEROS.map(g => '<option value="' + esc(g) + '"></option>').join('');
+$('#chips-genero').innerHTML = GENEROS.map(g => '<button type="button" data-g="' + esc(g) + '">' + esc(g) + '</button>').join('');
+function marcarChips() { const v = $('#f-genero').value.trim(); document.querySelectorAll('#chips-genero button').forEach(b => b.classList.toggle('on', b.dataset.g === v)); }
+$('#chips-genero').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; $('#f-genero').value = $('#f-genero').value === b.dataset.g ? '' : b.dataset.g; marcarChips(); });
+$('#f-genero').addEventListener('input', marcarChips);
 $('#quick').addEventListener('change', saveCfg);
 
 /* ---------- Lista ---------- */
 function renderList() {
   const q = norm($('#q').value);
-  const res = libros.filter(b => !q || norm([b.titulo, b.autor, b.editorial, b.coleccion, b.isbn, b.ubicacion].join(' ')).includes(q));
+  const res = libros.filter(b => !q || norm([b.titulo, b.autor, b.editorial, b.coleccion, b.genero, b.cdd, b.resumen, b.isbn, b.ubicacion].join(' ')).includes(q));
   $('#list').innerHTML = res.length ? res.map(b =>
     '<div class="item" data-id="' + esc(b.id) + '">' +
     (b.portada ? '<img loading="lazy" src="' + esc(b.portada) + '" alt="">' : '<div class="ph"></div>') +
     '<div><b>' + esc(b.titulo) + '</b><small>' + esc([b.autor, b.editorial, b.anio].filter(Boolean).join(' · ')) + '</small>' +
-    '<small>' + esc([b.coleccion, b.isbn, b.ubicacion].filter(Boolean).join(' · ')) + '</small></div></div>'
+    '<small>' + esc([b.coleccion, b.genero, b.cdd ? 'CDD ' + b.cdd : '', b.isbn, b.ubicacion].filter(Boolean).join(' · ')) + '</small></div></div>'
   ).join('') : '<p class="h">' + (libros.length ? 'Sin resultados.' : 'Todavía no cargaste libros.') + '</p>';
 }
 $('#q').addEventListener('input', renderList);
 $('#list').addEventListener('click', e => { const it = e.target.closest('.item'); if (it) editar(it.dataset.id); });
 
 /* ---------- Exportar ---------- */
-const COLS = [['ISBN', 'isbn'], ['Título', 'titulo'], ['Autor', 'autor'], ['Editorial', 'editorial'], ['Colección', 'coleccion'], ['Año', 'anio'], ['Páginas', 'paginas'], ['Idioma', 'idioma'], ['Ubicación', 'ubicacion'], ['Notas', 'notas']];
+const COLS = [['ISBN', 'isbn'], ['Título', 'titulo'], ['Autor', 'autor'], ['Editorial', 'editorial'], ['Colección', 'coleccion'], ['Género', 'genero'], ['CDD', 'cdd'], ['Año', 'anio'], ['Páginas', 'paginas'], ['Idioma', 'idioma'], ['Ubicación', 'ubicacion'], ['Notas', 'notas'], ['Resumen', 'resumen']];
 function csv(sep, excel) {
   const q = (v, isIsbn) => {
     v = String(v == null ? '' : v);
@@ -624,7 +829,7 @@ function csv(sep, excel) {
     return new RegExp('["\\n\\r' + sep + ']').test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
   };
   const head = COLS.map(c => q(c[0])).join(sep);
-  const rows = libros.slice().reverse().map(b => COLS.map(c => q(b[c[1]], c[1] === 'isbn')).join(sep));
+  const rows = libros.slice().reverse().map(b => COLS.map(c => q(c[1] === 'resumen' ? String(b.resumen || '').replace(/\s*\n+\s*/g, ' ') : b[c[1]], c[1] === 'isbn')).join(sep));
   return '\ufeff' + [head].concat(rows).join('\r\n');
 }
 function bajar(name, text, type) {
@@ -645,6 +850,15 @@ $('#x-share').onclick = async () => {
     else alert('Este navegador no permite compartir archivos. Usá Descargar.');
   } catch (e) {}
 };
+function marcExport(ext) {
+  if (!hay()) return;
+  const lista = libros.slice().reverse();
+  if (ext === 'xml') bajar('biblioteca_marc.xml', marcXmlLote(lista), 'application/xml');
+  else bajar('biblioteca_marc.' + ext, marcIsoLote(lista, $('#marc-enc').value === 'latin1'), 'application/octet-stream');
+}
+$('#m-iso').onclick = () => marcExport('iso');
+$('#m-mrc').onclick = () => marcExport('mrc');
+$('#m-xml').onclick = () => marcExport('xml');
 $('#b-exp').onclick = () => hay() && bajar('biblioteca_copia_' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(libros), 'application/json');
 $('#b-imp').onclick = () => $('#b-file').click();
 $('#b-file').onchange = async e => {
