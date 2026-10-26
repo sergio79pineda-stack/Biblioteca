@@ -49,6 +49,8 @@ nav button.on{color:var(--pri);font-weight:700;border-top:3px solid var(--pri);m
 .chk input{width:auto}
 h2{font-size:16px;margin:0 0 4px}
 p.h{font-size:13px;color:var(--mut);margin:4px 0}
+#resultados{margin-top:6px}
+#resultados .item{border:1px solid var(--bd);border-radius:8px;margin-top:6px}
 </style>
 </head>
 <body>
@@ -64,8 +66,17 @@ p.h{font-size:13px;color:var(--mut);margin:4px 0}
       <input id="isbn-man" inputmode="numeric" placeholder="o escribí el ISBN">
       <button class="btn sec" id="btn-buscar">Buscar</button>
     </div>
-    <label for="f-ubicacion">Ubicación para los próximos libros (se mantiene)</label>
-    <input id="f-ubicacion" placeholder="Ej: Living, estante 2">
+    <button class="btn sec" id="btn-manual">✍️ Cargar a mano (sin código de barras)</button>
+    <label for="q-titulo">Buscar por título / autor</label>
+    <div class="isbnrow">
+      <input id="q-titulo" placeholder="Ej: Noah Gordon el médico">
+      <button class="btn sec" id="btn-bt">Buscar</button>
+    </div>
+    <div id="resultados"></div>
+    <label for="def-col">Colección para los próximos libros (se mantiene)</label>
+    <input id="def-col" placeholder="Ej: Grandes éxitos de la novela histórica">
+    <label for="def-ubic">Ubicación para los próximos libros (se mantiene)</label>
+    <input id="def-ubic" placeholder="Ej: Living, estante 2">
     <label class="chk"><input type="checkbox" id="quick"> Modo rápido: guardar solo y seguir escaneando</label>
     <div id="status"></div>
   </div>
@@ -74,15 +85,24 @@ p.h{font-size:13px;color:var(--mut);margin:4px 0}
     <img id="cover" alt="" hidden>
     <h2 id="formtitle">Datos del libro</h2>
     <p class="h">Revisá y corregí lo que haga falta.</p>
+    <div class="row">
+      <button class="btn sec" id="btn-foto">📷 Foto de tapa</button>
+      <button class="btn sec" id="btn-galeria">🖼️ Galería</button>
+    </div>
+    <button class="btn sec" id="btn-quitar-foto" hidden>Quitar foto</button>
+    <input type="file" id="foto-cam" accept="image/*" capture="environment" hidden>
+    <input type="file" id="foto-gal" accept="image/*" hidden>
     <label for="f-isbn">ISBN</label><input id="f-isbn" inputmode="numeric">
     <label for="f-titulo">Título *</label><input id="f-titulo">
     <label for="f-autor">Autor</label><input id="f-autor">
     <label for="f-editorial">Editorial</label><input id="f-editorial">
+    <label for="f-coleccion">Colección</label><input id="f-coleccion" placeholder="Ej: Grandes éxitos de la novela histórica">
     <div class="row">
       <div><label for="f-anio">Año</label><input id="f-anio" inputmode="numeric"></div>
       <div><label for="f-paginas">Páginas</label><input id="f-paginas" inputmode="numeric"></div>
       <div><label for="f-idioma">Idioma</label><input id="f-idioma"></div>
     </div>
+    <label for="f-ubicacion">Ubicación</label><input id="f-ubicacion" placeholder="Ej: Living, estante 2">
     <label for="f-notas">Notas</label><textarea id="f-notas" rows="2"></textarea>
     <button class="btn" id="btn-save">Guardar libro</button>
     <div class="row">
@@ -102,7 +122,7 @@ p.h{font-size:13px;color:var(--mut);margin:4px 0}
 <section id="t-more" hidden>
   <div class="card">
     <h2>Exportar lista</h2>
-    <p class="h">Para subir a Aguapey u otro sistema. Columnas: ISBN, Título, Autor, Editorial, Año, Páginas, Idioma, Ubicación, Notas.</p>
+    <p class="h">Para subir a Aguapey u otro sistema. Columnas: ISBN, Título, Autor, Editorial, Colección, Año, Páginas, Idioma, Ubicación, Notas.</p>
     <button class="btn" id="x-csv">Descargar CSV (separador ;)</button>
     <button class="btn sec" id="x-csv2">Descargar CSV (separador ,)</button>
     <button class="btn sec" id="x-xl">CSV para abrir en Excel (ISBN como texto)</button>
@@ -130,15 +150,27 @@ p.h{font-size:13px;color:var(--mut);margin:4px 0}
 <script>
 const $ = s => document.querySelector(s);
 const KEY = 'biblioteca_v1', CFG = 'biblioteca_cfg';
-const F = ['isbn','titulo','autor','editorial','anio','paginas','idioma','ubicacion','notas'];
+const F = ['isbn','titulo','autor','editorial','coleccion','anio','paginas','idioma','ubicacion','notas'];
 let libros = [], editId = null, scanning = false, stream = null, detector = null, h5 = null, lastCode = '', lastTime = 0;
 
-try { libros = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { libros = []; }
-try { const c = JSON.parse(localStorage.getItem(CFG) || '{}'); $('#f-ubicacion').value = c.ubic || ''; $('#quick').checked = !!c.quick; } catch (e) {}
+/* Almacenamiento en IndexedDB (aguanta muchas fotos); migra lo viejo de localStorage */
+function idb() { return new Promise((ok, no) => { const r = indexedDB.open('biblioteca_db', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); }); }
+async function idbGet(k) { const d = await idb(); return new Promise((ok, no) => { const r = d.transaction('kv').objectStore('kv').get(k); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); }); }
+async function idbSet(k, v) { const d = await idb(); return new Promise((ok, no) => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => ok(); t.onerror = () => no(t.error); }); }
+async function init() {
+  let v;
+  try { v = await idbGet('libros'); } catch (e) {}
+  if (!Array.isArray(v)) {
+    try { v = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { v = []; }
+    if (v.length) idbSet('libros', v).catch(() => {});
+  }
+  libros = v; updateCount();
+}
+try { const c = JSON.parse(localStorage.getItem(CFG) || '{}'); $('#def-ubic').value = c.ubic || ''; $('#def-col').value = c.col || ''; $('#quick').checked = !!c.quick; } catch (e) {}
 try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
 
-function persist() { try { localStorage.setItem(KEY, JSON.stringify(libros)); } catch (e) { alert('No se pudo guardar: ' + e.message); } }
-function saveCfg() { try { localStorage.setItem(CFG, JSON.stringify({ ubic: $('#f-ubicacion').value, quick: $('#quick').checked })); } catch (e) {} }
+function persist() { idbSet('libros', libros).catch(e => alert('No se pudo guardar: ' + (e && e.message))); }
+function saveCfg() { try { localStorage.setItem(CFG, JSON.stringify({ ubic: $('#def-ubic').value, col: $('#def-col').value, quick: $('#quick').checked })); } catch (e) {} }
 function updateCount() { $('#count').textContent = libros.length + (libros.length === 1 ? ' libro' : ' libros'); }
 function status(t, cls) { const s = $('#status'); s.textContent = t; s.className = cls || ''; }
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -277,9 +309,9 @@ async function buscar(isbn) {
       setTimeout(startCam, 1200);
       return;
     }
-    status(ya ? 'Ojo: este ISBN ya está en tu biblioteca.' : 'Encontrado. Revisá y guardá.', ya ? 'err' : 'ok');
+    status(ya ? 'Ojo: este ISBN ya está en tu biblioteca.' : 'Encontrado. Verificá que título y portada sean los de TU libro (en colecciones viejas a veces trae otro) y corregí si hace falta.', ya ? 'err' : 'ok');
   } else {
-    status('No encontré datos para ' + isbn + '. Completalos a mano.', 'err');
+    status('No encontré datos para ' + isbn + '. Probá buscar por título/autor o cargalo a mano.', 'err');
   }
   $('#formcard').hidden = false;
   $('#formcard').scrollIntoView({ behavior: 'smooth' });
@@ -289,13 +321,73 @@ async function buscar(isbn) {
 function setCover(u) {
   const i = $('#cover'); i.dataset.src = u || '';
   if (u) { i.src = u; i.hidden = false; } else { i.removeAttribute('src'); i.hidden = true; }
+  $('#btn-quitar-foto').hidden = !u;
 }
-function fill(d) { F.forEach(k => { if (d[k] !== undefined && k !== 'ubicacion') $('#f-' + k).value = d[k]; }); if (d.ubicacion !== undefined) $('#f-ubicacion').value = d.ubicacion; setCover(d.portada || ''); }
+function fill(d) { F.forEach(k => { if (d[k] !== undefined) $('#f-' + k).value = d[k]; }); setCover(d.portada || ''); }
+
+/* Foto de tapa: se reduce a ~360px para que ocupe poco */
+function procesarFoto(file) {
+  if (!file) return;
+  const url = URL.createObjectURL(file), img = new Image();
+  img.onload = () => {
+    const s = Math.min(1, 360 / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    setCover(c.toDataURL('image/jpeg', 0.7));
+    URL.revokeObjectURL(url);
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); alert('No se pudo leer la foto.'); };
+  img.src = url;
+}
+
+/* Búsqueda por título / autor */
+let resultados = [];
+async function buscarTitulo(q) {
+  const box = $('#resultados');
+  box.innerHTML = '<p class="h">Buscando…</p>';
+  resultados = [];
+  try {
+    const r = await fetch('https://www.googleapis.com/books/v1/volumes?q=' + encodeURIComponent(q) + '&maxResults=15&printType=books');
+    const j = await r.json();
+    (j.items || []).forEach(it => {
+      const v = it.volumeInfo || {}, ids = v.industryIdentifiers || [];
+      const i13 = (ids.find(x => x.type === 'ISBN_13') || {}).identifier;
+      const i10 = (ids.find(x => x.type === 'ISBN_10') || {}).identifier;
+      if (!v.title) return;
+      resultados.push({
+        isbn: i13 || (i10 && /^\d{9}[\dX]$/.test(i10) ? to13(i10) : ''),
+        titulo: [v.title, v.subtitle].filter(Boolean).join(': '),
+        autor: (v.authors || []).join(', '), editorial: v.publisher || '',
+        anio: (v.publishedDate || '').slice(0, 4), paginas: v.pageCount || '', idioma: v.language || '',
+        portada: ((v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail)) || '').replace('http://', 'https://')
+      });
+    });
+  } catch (e) {}
+  try {
+    const r = await fetch('https://openlibrary.org/search.json?q=' + encodeURIComponent(q) + '&limit=10&fields=title,author_name,publisher,first_publish_year,isbn,cover_i,number_of_pages_median');
+    const j = await r.json();
+    (j.docs || []).forEach(d => {
+      if (!d.title) return;
+      const i13 = (d.isbn || []).find(x => /^97[89]\d{10}$/.test(x));
+      resultados.push({
+        isbn: i13 || '', titulo: d.title, autor: (d.author_name || []).join(', '),
+        editorial: (d.publisher || [])[0] || '', anio: d.first_publish_year || '', paginas: d.number_of_pages_median || '', idioma: '',
+        portada: d.cover_i ? 'https://covers.openlibrary.org/b/id/' + d.cover_i + '-M.jpg' : ''
+      });
+    });
+  } catch (e) {}
+  box.innerHTML = resultados.length
+    ? '<p class="h">Tocá el que coincida (o cargalo a mano si ninguno es):</p>' + resultados.map((b, i) =>
+      '<div class="item" data-i="' + i + '">' + (b.portada ? '<img loading="lazy" src="' + esc(b.portada) + '" alt="">' : '<div class="ph"></div>') +
+      '<div><b>' + esc(b.titulo) + '</b><small>' + esc([b.autor, b.editorial, b.anio].filter(Boolean).join(' · ')) + '</small></div></div>').join('')
+    : '<p class="h">No encontré resultados. Probá con menos palabras (título + apellido) o cargalo a mano.</p>';
+}
 function readForm() { const o = {}; F.forEach(k => o[k] = $('#f-' + k).value.trim()); o.portada = $('#cover').dataset.src || ''; return o; }
 function limpiar(keepStatus) {
-  const u = $('#f-ubicacion').value;
   F.forEach(k => $('#f-' + k).value = '');
-  $('#f-ubicacion').value = u;
+  $('#f-ubicacion').value = $('#def-ubic').value;
+  $('#f-coleccion').value = $('#def-col').value;
   setCover(''); editId = null;
   $('#btn-del').hidden = true; $('#formcard').hidden = true; $('#formtitle').textContent = 'Datos del libro';
   if (!keepStatus) status('');
@@ -313,13 +405,16 @@ function guardarLibro(auto) {
     }
     libros.unshift(Object.assign({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }, o, { fecha: new Date().toISOString().slice(0, 10) }));
   }
+  if (!editId) { $('#def-ubic').value = o.ubicacion; $('#def-col').value = o.coleccion; }
   persist(); updateCount(); saveCfg();
   return true;
 }
 function editar(id) {
   const b = libros.find(x => x.id === id); if (!b) return;
   tab('scan');
+  limpiar(true);
   editId = id; fill(b);
+  $('#f-coleccion').value = b.coleccion || ''; $('#f-ubicacion').value = b.ubicacion || '';
   $('#formcard').hidden = false; $('#btn-del').hidden = false; $('#formtitle').textContent = 'Editar libro';
   status('');
   $('#formcard').scrollIntoView();
@@ -341,25 +436,44 @@ $('#btn-del').onclick = () => {
   if (!editId || !confirm('¿Eliminar este libro?')) return;
   libros = libros.filter(x => x.id !== editId); persist(); updateCount(); limpiar(); tab('lib');
 };
-$('#f-ubicacion').addEventListener('change', saveCfg);
+$('#def-ubic').addEventListener('change', saveCfg);
+$('#def-col').addEventListener('change', saveCfg);
+$('#btn-manual').onclick = () => {
+  stopCam(); limpiar(); status('Cargá los datos a mano. Podés sacarle una foto a la tapa.');
+  $('#formcard').hidden = false; $('#formcard').scrollIntoView({ behavior: 'smooth' }); $('#f-titulo').focus();
+};
+$('#btn-bt').onclick = () => { const q = $('#q-titulo').value.trim(); if (q) { stopCam(); buscarTitulo(q); } };
+$('#q-titulo').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btn-bt').click(); });
+$('#resultados').addEventListener('click', e => {
+  const it = e.target.closest('.item'); if (!it) return;
+  const b = resultados[+it.dataset.i]; if (!b) return;
+  limpiar(true); fill(b);
+  $('#formcard').hidden = false; status('Revisá los datos y guardá. Podés cambiar la foto por una propia.', 'ok');
+  $('#formcard').scrollIntoView({ behavior: 'smooth' });
+});
+$('#btn-foto').onclick = () => $('#foto-cam').click();
+$('#btn-galeria').onclick = () => $('#foto-gal').click();
+$('#foto-cam').onchange = e => { procesarFoto(e.target.files[0]); e.target.value = ''; };
+$('#foto-gal').onchange = e => { procesarFoto(e.target.files[0]); e.target.value = ''; };
+$('#btn-quitar-foto').onclick = () => setCover('');
 $('#quick').addEventListener('change', saveCfg);
 
 /* ---------- Lista ---------- */
 function renderList() {
   const q = norm($('#q').value);
-  const res = libros.filter(b => !q || norm([b.titulo, b.autor, b.editorial, b.isbn, b.ubicacion].join(' ')).includes(q));
+  const res = libros.filter(b => !q || norm([b.titulo, b.autor, b.editorial, b.coleccion, b.isbn, b.ubicacion].join(' ')).includes(q));
   $('#list').innerHTML = res.length ? res.map(b =>
     '<div class="item" data-id="' + esc(b.id) + '">' +
     (b.portada ? '<img loading="lazy" src="' + esc(b.portada) + '" alt="">' : '<div class="ph"></div>') +
     '<div><b>' + esc(b.titulo) + '</b><small>' + esc([b.autor, b.editorial, b.anio].filter(Boolean).join(' · ')) + '</small>' +
-    '<small>' + esc([b.isbn, b.ubicacion].filter(Boolean).join(' · ')) + '</small></div></div>'
+    '<small>' + esc([b.coleccion, b.isbn, b.ubicacion].filter(Boolean).join(' · ')) + '</small></div></div>'
   ).join('') : '<p class="h">' + (libros.length ? 'Sin resultados.' : 'Todavía no cargaste libros.') + '</p>';
 }
 $('#q').addEventListener('input', renderList);
 $('#list').addEventListener('click', e => { const it = e.target.closest('.item'); if (it) editar(it.dataset.id); });
 
 /* ---------- Exportar ---------- */
-const COLS = [['ISBN', 'isbn'], ['Título', 'titulo'], ['Autor', 'autor'], ['Editorial', 'editorial'], ['Año', 'anio'], ['Páginas', 'paginas'], ['Idioma', 'idioma'], ['Ubicación', 'ubicacion'], ['Notas', 'notas']];
+const COLS = [['ISBN', 'isbn'], ['Título', 'titulo'], ['Autor', 'autor'], ['Editorial', 'editorial'], ['Colección', 'coleccion'], ['Año', 'anio'], ['Páginas', 'paginas'], ['Idioma', 'idioma'], ['Ubicación', 'ubicacion'], ['Notas', 'notas']];
 function csv(sep, excel) {
   const q = (v, isIsbn) => {
     v = String(v == null ? '' : v);
@@ -407,7 +521,7 @@ $('#b-clear').onclick = () => {
   if (confirm('¿Borrar los ' + libros.length + ' libros? Esto no se puede deshacer.') && confirm('Última confirmación: ¿borrar todo?')) { libros = []; persist(); updateCount(); }
 };
 
-updateCount();
+init();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
