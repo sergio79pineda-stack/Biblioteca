@@ -92,6 +92,10 @@ p.h{font-size:13px;color:var(--mut);margin:4px 0}
     <button class="btn sec" id="btn-quitar-foto" hidden>Quitar foto</button>
     <input type="file" id="foto-cam" accept="image/*" capture="environment" hidden>
     <input type="file" id="foto-gal" accept="image/*" hidden>
+    <button class="btn sec" id="btn-ocr">📄 Leer datos de la página legal (foto)</button>
+    <input type="file" id="foto-ocr" accept="image/*" hidden>
+    <div id="ocr-msg" class="h"></div>
+    <details id="ocr-det" hidden><summary>Texto leído de la foto</summary><textarea id="ocr-txt" rows="8" readonly></textarea></details>
     <label for="f-isbn">ISBN</label><input id="f-isbn" inputmode="numeric">
     <label for="f-titulo">Título *</label><input id="f-titulo">
     <label for="f-autor">Autor</label><input id="f-autor">
@@ -325,6 +329,142 @@ function setCover(u) {
 }
 function fill(d) { F.forEach(k => { if (d[k] !== undefined) $('#f-' + k).value = d[k]; }); setCover(d.portada || ''); }
 
+/* ---------- Lectura de la página legal (OCR) ---------- */
+function isbnValido(c) {
+  if (c.length === 10) { let s = 0; for (let i = 0; i < 10; i++) s += (c[i] === 'X' ? 10 : +c[i]) * (10 - i); return s % 11 === 0; }
+  if (c.length === 13) { let s = 0; for (let i = 0; i < 12; i++) s += +c[i] * (i % 2 ? 3 : 1); return (10 - s % 10) % 10 === +c[12]; }
+  return false;
+}
+function parsePagina(texto) {
+  const lines = String(texto || '').replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
+  const out = {};
+  const MARCA = '(?:[©Oo0Cc]|\\(\\s*[cC]\\s*\\))';
+  const EMPRESA = /editorial|ediciones|edit\.|\bS\.?\s?A\b|\bS\.?\s?L\b|\bS\.?\s?R\.?\s?L\b|\bltda|grupo|barcelona|derechos|herederos|\binc\b|press|publishing|libros|fundaci/i;
+  const limpiarEditorial = s => s.replace(/[\s,;.]+$/, '').replace(/\s+(S\.?\s?A\.?(\s?I\.?\s?C\.?)?|S\.?\s?R\.?\s?L\.?|S\.?\s?L\.?|Ltda\.?)$/i, '').replace(/[\s,;.]+$/, '').trim();
+
+  // ISBN: el primero que no sea "obra completa"
+  const isbns = [];
+  lines.forEach(l => {
+    const m = l.match(/ISBN(?:-1[03])?(?:\s*\([^)]*\))?[^0-9]{0,15}((?:97[89][ \t-]?)?\d[\d \t-]{7,16}[\dXx])/i);
+    if (m) isbns.push({ d: m[1].replace(/[^0-9Xx]/g, '').toUpperCase(), oc: /obra\s+completa|o\.\s?c\./i.test(l) });
+  });
+  const pick = isbns.find(x => !x.oc && (x.d.length === 10 || x.d.length === 13)) || isbns.find(x => x.d.length === 10 || x.d.length === 13);
+  if (pick) { out.isbnRaw = pick.d; out.isbnOk = isbnValido(pick.d); }
+
+  // Año: "De esta edición" > impresión > último © con año
+  const yr = s => { const m = s.match(/\b(1[5-9]\d\d|20\d\d)\b/); return m ? m[1] : ''; };
+  const edi = lines.find(l => /de\s+esta\s+edici[oó]n/i.test(l));
+  if (edi && yr(edi)) {
+    out.anio = yr(edi);
+    const m = edi.match(/\b(?:1[5-9]\d\d|20\d\d)\b\s*[,:;.-]?\s*(.+)$/);
+    if (m && /editorial|ediciones|edit\./i.test(m[1])) out.editorial = limpiarEditorial(m[1].split(/,\s*/)[0]);
+  }
+  if (!out.anio) {
+    const ed = lines.find(l => /edici[oó]n/i.test(l) && !/original|t[ií]tulo/i.test(l) && yr(l));
+    if (ed) out.anio = yr(ed);
+  }
+  if (!out.anio) {
+    const imp = lines.find(l => /impres|printed|tirada/i.test(l) && yr(l));
+    if (imp) out.anio = yr(imp);
+  }
+  const marcadas = lines.filter(l => new RegExp('^' + MARCA + '\\s*(?:\\d{4}|[^\\d]{3,}\\d{4})').test(l));
+  if (!out.anio) {
+    const ys = marcadas.map(yr).filter(Boolean).sort();
+    if (ys.length) out.anio = ys[ys.length - 1];
+  }
+
+  // Editorial (si no vino de "De esta edición")
+  if (!out.editorial) {
+    for (const l of marcadas.concat(lines)) {
+      const seg = l.split(/,\s*/).find(s => /\b(editorial|ediciones)\b/i.test(s));
+      if (seg) { out.editorial = limpiarEditorial(seg.replace(new RegExp('^' + MARCA + '\\s*\\d{0,4}\\s*[,:.]?\\s*'), '')); break; }
+    }
+  }
+
+  // Autor: primer © con nombre de persona (no empresa)
+  for (const l of marcadas) {
+    let m = l.match(new RegExp('^' + MARCA + '\\s*\\d{4}\\s*[,.:;]?\\s*(.+)$'));
+    let nombre = m && m[1];
+    if (!nombre) { m = l.match(new RegExp('^' + MARCA + '\\s*([^\\d,]+?)\\s*[,.]?\\s*\\d{4}')); nombre = m && m[1]; }
+    if (!nombre) continue;
+    nombre = nombre.split(/\s*,\s*/)[0].replace(/[.\s]+$/, '').trim();
+    if (nombre.length >= 5 && !EMPRESA.test(nombre)) { out.autor = nombre; break; }
+  }
+
+  // Colección (si la página la nombra)
+  const col = lines.find(l => /^colecci[oó]n\b/i.test(l));
+  if (col) { const c = col.replace(/^colecci[oó]n\s*[:\-]?\s*/i, '').trim(); if (c) out.coleccion = c; }
+  return out;
+}
+
+let ocrWorker = null;
+function ocrMsg(t, cls) { const e = $('#ocr-msg'); e.textContent = t; e.style.color = cls === 'err' ? 'var(--err)' : cls === 'ok' ? 'var(--ok)' : ''; }
+function cargarScript(src) {
+  return new Promise((ok, no) => {
+    if (window.Tesseract) return ok();
+    const s = document.createElement('script'); s.src = src; s.onload = ok;
+    s.onerror = () => no(new Error('no se pudo cargar el lector de texto (¿hay internet?)'));
+    document.head.appendChild(s);
+  });
+}
+async function getWorker() {
+  if (ocrWorker) return ocrWorker;
+  await cargarScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+  const logger = m => { if (m && m.status) ocrMsg('Leyendo la foto… ' + (m.status === 'recognizing text' ? 'reconociendo texto ' : 'preparando (la primera vez descarga ~2 MB) ') + Math.round((m.progress || 0) * 100) + '%'); };
+  try { ocrWorker = await Tesseract.createWorker('spa', 1, { langPath: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/spa@1.0.0/4.0.0_best_int', logger }); }
+  catch (e) { ocrWorker = await Tesseract.createWorker('spa', 1, { logger }); }
+  return ocrWorker;
+}
+function fotoACanvas(file, max) {
+  return new Promise((ok, no) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); ok(c);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); no(new Error('No se pudo leer la foto.')); };
+    img.src = url;
+  });
+}
+async function leerPagina(file) {
+  if (!file) return;
+  $('#btn-ocr').disabled = true;
+  try {
+    ocrMsg('Preparando lector de texto…');
+    const c = await fotoACanvas(file, 2000);
+    const w = await getWorker();
+    const r = await w.recognize(c);
+    const txt = (r.data && r.data.text) || '';
+    $('#ocr-txt').value = txt; $('#ocr-det').hidden = false;
+    const p = parsePagina(txt), hallados = [];
+    const poner = (id, v, nombre) => { if (v && !$('#f-' + id).value.trim()) { $('#f-' + id).value = v; hallados.push(nombre); } };
+    if (p.isbnRaw) poner('isbn', p.isbnOk ? cleanIsbn(p.isbnRaw) : p.isbnRaw, 'ISBN');
+    poner('anio', p.anio, 'año'); poner('editorial', p.editorial, 'editorial'); poner('autor', p.autor, 'autor'); poner('coleccion', p.coleccion, 'colección');
+    let extra = '';
+    const isbn = $('#f-isbn').value.trim();
+    if (p.isbnOk && isbn && !$('#f-titulo').value.trim()) {
+      ocrMsg('Leído. Buscando título y portada por ISBN…');
+      let d = null;
+      try { d = await fromGoogle(isbn); } catch (e) {}
+      if (!d || !d.titulo) { try { d = merge(d, await fromOL(isbn)); } catch (e) {} }
+      if (d && d.titulo) {
+        poner('titulo', d.titulo, 'título'); poner('autor', d.autor, 'autor'); poner('editorial', d.editorial, 'editorial');
+        poner('paginas', d.paginas, 'páginas'); poner('idioma', d.idioma, 'idioma');
+        if (!$('#cover').dataset.src && d.portada) setCover(d.portada);
+        extra = ' El título y la portada vinieron de internet por ISBN: verificá que sean de TU libro.';
+      } else extra = ' No encontré el título por ISBN: escribilo vos (está en la tapa).';
+    } else if (!$('#f-titulo').value.trim()) extra = ' El título no está en esta página: escribilo vos (está en la tapa).';
+    if (!p.isbnRaw && !hallados.length) ocrMsg('No pude reconocer datos en esa foto. Probá con más luz, de frente y sin sombras, o cargalo a mano.', 'err');
+    else {
+      const mal = p.isbnRaw && !p.isbnOk;
+      ocrMsg((mal ? '⚠ Revisá el ISBN: el dígito verificador no cierra, puede estar mal leído. ' : '') + 'Completé: ' + (hallados.join(', ') || 'nada nuevo') + '.' + extra + ' Revisá todo antes de guardar.', mal ? 'err' : 'ok');
+    }
+  } catch (e) {
+    ocrMsg('No se pudo leer la foto: ' + (e && e.message ? e.message : e), 'err');
+  } finally { $('#btn-ocr').disabled = false; }
+}
+
 /* Foto de tapa: se reduce a ~360px para que ocupe poco */
 function procesarFoto(file) {
   if (!file) return;
@@ -388,6 +528,7 @@ function limpiar(keepStatus) {
   F.forEach(k => $('#f-' + k).value = '');
   $('#f-ubicacion').value = $('#def-ubic').value;
   $('#f-coleccion').value = $('#def-col').value;
+  $('#ocr-msg').textContent = ''; $('#ocr-det').hidden = true; $('#ocr-txt').value = '';
   setCover(''); editId = null;
   $('#btn-del').hidden = true; $('#formcard').hidden = true; $('#formtitle').textContent = 'Datos del libro';
   if (!keepStatus) status('');
@@ -456,6 +597,8 @@ $('#btn-galeria').onclick = () => $('#foto-gal').click();
 $('#foto-cam').onchange = e => { procesarFoto(e.target.files[0]); e.target.value = ''; };
 $('#foto-gal').onchange = e => { procesarFoto(e.target.files[0]); e.target.value = ''; };
 $('#btn-quitar-foto').onclick = () => setCover('');
+$('#btn-ocr').onclick = () => $('#foto-ocr').click();
+$('#foto-ocr').onchange = e => { const f = e.target.files[0]; e.target.value = ''; leerPagina(f); };
 $('#quick').addEventListener('change', saveCfg);
 
 /* ---------- Lista ---------- */
