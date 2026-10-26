@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f4e5f">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<title>Mi Biblioteca</title>
+<style>
+:root{--bg:#fbf7f0;--card:#fff;--tx:#222;--mut:#6b6b6b;--pri:#1f4e5f;--acc:#d98e04;--bd:#e3dccf;--ok:#2e7d32;--err:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#14181a;--card:#1d2326;--tx:#eee;--mut:#9aa5a8;--pri:#5fb0c9;--acc:#f0a830;--bd:#2f393d}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;font-family:system-ui,-apple-system,Roboto,sans-serif;background:var(--bg);color:var(--tx);padding-bottom:78px}
+header{background:var(--pri);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
+header h1{font-size:18px;margin:0}
+header span{font-size:13px;opacity:.9}
+main{padding:12px;max-width:640px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px}
+button,input,textarea{font:inherit}
+input,textarea{width:100%;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx)}
+label{display:block;font-size:12px;color:var(--mut);margin:8px 0 3px}
+.btn{background:var(--pri);color:#fff;border:0;border-radius:10px;padding:12px 14px;font-weight:600;width:100%;margin-top:8px}
+.btn.sec{background:transparent;color:var(--pri);border:1px solid var(--pri)}
+.btn.red{background:var(--err)}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+.row .btn{margin-top:8px}
+.isbnrow{display:flex;gap:8px;margin-top:8px}
+.isbnrow input{flex:1}
+.isbnrow .btn{width:auto;margin:0;padding:10px 16px}
+#cam{position:relative;border-radius:10px;overflow:hidden;background:#000;margin-top:8px}
+#cam video{width:100%;display:block;max-height:300px;object-fit:cover}
+#cam .guide{position:absolute;left:10%;right:10%;top:38%;height:24%;border:2px solid var(--acc);border-radius:8px;pointer-events:none}
+#reader{width:100%}
+#status{font-size:14px;min-height:20px;margin-top:8px;color:var(--mut)}
+#status.ok{color:var(--ok)}#status.err{color:var(--err)}
+#cover{width:70px;height:100px;object-fit:cover;border-radius:6px;border:1px solid var(--bd);float:right;margin:0 0 8px 8px}
+.item{display:flex;gap:10px;padding:10px;border-bottom:1px solid var(--bd);cursor:pointer}
+.item:last-child{border-bottom:0}
+.item img,.item .ph{width:42px;height:60px;object-fit:cover;border-radius:4px;background:var(--bd);flex:none}
+.item b{display:block;font-size:15px}
+.item small{color:var(--mut);display:block}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--bd);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;border:0;background:none;padding:12px 4px;color:var(--mut);font-size:13px}
+nav button.on{color:var(--pri);font-weight:700;border-top:3px solid var(--pri);margin-top:-1px}
+.chk{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px}
+.chk input{width:auto}
+h2{font-size:16px;margin:0 0 4px}
+p.h{font-size:13px;color:var(--mut);margin:4px 0}
+</style>
+</head>
+<body>
+<header><h1>📚 Mi Biblioteca</h1><span id="count">0 libros</span></header>
+<main>
+
+<section id="t-scan">
+  <div class="card">
+    <button class="btn" id="btn-cam">📷 Escanear código de barras</button>
+    <div id="cam" hidden><video id="video" playsinline muted></video><div class="guide"></div></div>
+    <div id="reader" hidden></div>
+    <div class="isbnrow">
+      <input id="isbn-man" inputmode="numeric" placeholder="o escribí el ISBN">
+      <button class="btn sec" id="btn-buscar">Buscar</button>
+    </div>
+    <label for="f-ubicacion">Ubicación para los próximos libros (se mantiene)</label>
+    <input id="f-ubicacion" placeholder="Ej: Living, estante 2">
+    <label class="chk"><input type="checkbox" id="quick"> Modo rápido: guardar solo y seguir escaneando</label>
+    <div id="status"></div>
+  </div>
+
+  <div class="card" id="formcard" hidden>
+    <img id="cover" alt="" hidden>
+    <h2 id="formtitle">Datos del libro</h2>
+    <p class="h">Revisá y corregí lo que haga falta.</p>
+    <label for="f-isbn">ISBN</label><input id="f-isbn" inputmode="numeric">
+    <label for="f-titulo">Título *</label><input id="f-titulo">
+    <label for="f-autor">Autor</label><input id="f-autor">
+    <label for="f-editorial">Editorial</label><input id="f-editorial">
+    <div class="row">
+      <div><label for="f-anio">Año</label><input id="f-anio" inputmode="numeric"></div>
+      <div><label for="f-paginas">Páginas</label><input id="f-paginas" inputmode="numeric"></div>
+      <div><label for="f-idioma">Idioma</label><input id="f-idioma"></div>
+    </div>
+    <label for="f-notas">Notas</label><textarea id="f-notas" rows="2"></textarea>
+    <button class="btn" id="btn-save">Guardar libro</button>
+    <div class="row">
+      <button class="btn sec" id="btn-cancel">Cancelar</button>
+      <button class="btn red" id="btn-del" hidden>Eliminar</button>
+    </div>
+  </div>
+</section>
+
+<section id="t-lib" hidden>
+  <div class="card">
+    <input id="q" type="search" placeholder="Buscar por título, autor, editorial o ISBN">
+    <div id="list" style="margin-top:8px"></div>
+  </div>
+</section>
+
+<section id="t-more" hidden>
+  <div class="card">
+    <h2>Exportar lista</h2>
+    <p class="h">Para subir a Aguapey u otro sistema. Columnas: ISBN, Título, Autor, Editorial, Año, Páginas, Idioma, Ubicación, Notas.</p>
+    <button class="btn" id="x-csv">Descargar CSV (separador ;)</button>
+    <button class="btn sec" id="x-csv2">Descargar CSV (separador ,)</button>
+    <button class="btn sec" id="x-xl">CSV para abrir en Excel (ISBN como texto)</button>
+    <button class="btn sec" id="x-share">Compartir archivo…</button>
+  </div>
+  <div class="card">
+    <h2>Copia de seguridad / compartir con otro teléfono</h2>
+    <p class="h">Cada teléfono guarda su propia lista. Para pasar la biblioteca a otro celular, exportá la copia y abrila ahí con "Importar".</p>
+    <button class="btn" id="b-exp">Descargar copia (JSON)</button>
+    <button class="btn sec" id="b-imp">Importar copia (JSON)</button>
+    <input type="file" id="b-file" accept=".json,application/json" hidden>
+  </div>
+  <div class="card">
+    <button class="btn red" id="b-clear">Borrar toda la biblioteca</button>
+  </div>
+</section>
+
+</main>
+<nav>
+  <button data-t="scan" class="on">📷<br>Cargar</button>
+  <button data-t="lib">📖<br>Biblioteca</button>
+  <button data-t="more">⚙️<br>Exportar</button>
+</nav>
+
+<script>
+const $ = s => document.querySelector(s);
+const KEY = 'biblioteca_v1', CFG = 'biblioteca_cfg';
+const F = ['isbn','titulo','autor','editorial','anio','paginas','idioma','ubicacion','notas'];
+let libros = [], editId = null, scanning = false, stream = null, detector = null, h5 = null, lastCode = '', lastTime = 0;
+
+try { libros = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { libros = []; }
+try { const c = JSON.parse(localStorage.getItem(CFG) || '{}'); $('#f-ubicacion').value = c.ubic || ''; $('#quick').checked = !!c.quick; } catch (e) {}
+try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+
+function persist() { try { localStorage.setItem(KEY, JSON.stringify(libros)); } catch (e) { alert('No se pudo guardar: ' + e.message); } }
+function saveCfg() { try { localStorage.setItem(CFG, JSON.stringify({ ubic: $('#f-ubicacion').value, quick: $('#quick').checked })); } catch (e) {} }
+function updateCount() { $('#count').textContent = libros.length + (libros.length === 1 ? ' libro' : ' libros'); }
+function status(t, cls) { const s = $('#status'); s.textContent = t; s.className = cls || ''; }
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+/* ---------- Pestañas ---------- */
+function tab(n) {
+  document.querySelectorAll('section').forEach(s => s.hidden = s.id !== 't-' + n);
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === n));
+  if (n !== 'scan') stopCam();
+  if (n === 'lib') renderList();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => tab(b.dataset.t));
+
+/* ---------- ISBN ---------- */
+function to13(c) {
+  if (c.length === 13) return c;
+  const b = '978' + c.slice(0, 9);
+  let s = 0; for (let i = 0; i < 12; i++) s += +b[i] * (i % 2 ? 3 : 1);
+  return b + ((10 - s % 10) % 10);
+}
+function cleanIsbn(raw) {
+  const c = String(raw).replace(/[^0-9Xx]/g, '').toUpperCase();
+  if (/^97[89]\d{10}$/.test(c)) return c;
+  if (/^\d{9}[\dX]$/.test(c)) return to13(c);
+  return null;
+}
+
+/* ---------- Cámara ---------- */
+async function startCam() {
+  status('Abriendo cámara…');
+  if ('BarcodeDetector' in window) {
+    try {
+      detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a'] });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      const v = $('#video'); v.srcObject = stream; await v.play();
+      $('#cam').hidden = false; scanning = true; status('Apuntá al código de barras del dorso.');
+      loop(); return;
+    } catch (e) { status('No se pudo abrir la cámara: ' + e.message, 'err'); stopCam(); return; }
+  }
+  // Alternativa para navegadores sin BarcodeDetector
+  try {
+    if (!window.Html5Qrcode) await new Promise((ok, no) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js';
+      s.onload = ok; s.onerror = () => no(new Error('no se pudo cargar el lector'));
+      document.head.appendChild(s);
+    });
+    $('#reader').hidden = false;
+    h5 = new Html5Qrcode('reader');
+    scanning = true;
+    await h5.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 280, height: 120 } }, txt => onCode(txt), () => {});
+    status('Apuntá al código de barras del dorso.');
+  } catch (e) { status('No se pudo abrir la cámara: ' + e.message, 'err'); stopCam(); }
+}
+async function loop() {
+  if (!scanning || !detector) return;
+  try {
+    const r = await detector.detect($('#video'));
+    if (r.length) onCode(r[0].rawValue);
+  } catch (e) {}
+  if (scanning) setTimeout(loop, 180);
+}
+function stopCam() {
+  scanning = false;
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  const v = $('#video'); if (v) v.srcObject = null;
+  $('#cam').hidden = true;
+  if (h5) { const h = h5; h5 = null; h.stop().catch(() => {}).then(() => { try { h.clear(); } catch (e) {} }); }
+  $('#reader').hidden = true;
+}
+function onCode(raw) {
+  const now = Date.now();
+  if (raw === lastCode && now - lastTime < 2500) return;
+  lastCode = raw; lastTime = now;
+  const isbn = cleanIsbn(raw);
+  if (!isbn) { status('Leí "' + raw + '" pero no es un ISBN. Probá con el código que empieza con 978 o 979.', 'err'); return; }
+  if (navigator.vibrate) navigator.vibrate(80);
+  stopCam();
+  buscar(isbn);
+}
+
+/* ---------- Búsqueda de datos ---------- */
+async function fromGoogle(isbn) {
+  const r = await fetch('https://www.googleapis.com/books/v1/volumes?q=isbn:' + isbn + '&maxResults=1');
+  const j = await r.json();
+  const v = j.items && j.items[0] && j.items[0].volumeInfo;
+  if (!v) return null;
+  return {
+    titulo: [v.title, v.subtitle].filter(Boolean).join(': '),
+    autor: (v.authors || []).join(', '),
+    editorial: v.publisher || '',
+    anio: (v.publishedDate || '').slice(0, 4),
+    paginas: v.pageCount || '',
+    idioma: v.language || '',
+    portada: ((v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail)) || '').replace('http://', 'https://')
+  };
+}
+async function fromOL(isbn) {
+  const r = await fetch('https://openlibrary.org/api/books?bibkeys=ISBN:' + isbn + '&format=json&jscmd=data');
+  const j = await r.json();
+  const v = j['ISBN:' + isbn];
+  if (!v) return null;
+  const y = (v.publish_date || '').match(/\d{4}/);
+  return {
+    titulo: v.title ? v.title + (v.subtitle ? ': ' + v.subtitle : '') : '',
+    autor: (v.authors || []).map(a => a.name).join(', '),
+    editorial: (v.publishers || []).map(p => p.name).join(', '),
+    anio: y ? y[0] : '',
+    paginas: v.number_of_pages || '',
+    idioma: '',
+    portada: v.cover ? (v.cover.medium || v.cover.small || '') : ''
+  };
+}
+function merge(a, b) {
+  const o = Object.assign({}, a || {});
+  Object.keys(b || {}).forEach(k => { if (!o[k]) o[k] = b[k]; });
+  return o;
+}
+
+async function buscar(isbn) {
+  limpiar(true);
+  $('#f-isbn').value = isbn;
+  status('Buscando ' + isbn + '…');
+  let d = null;
+  try { d = await fromGoogle(isbn); } catch (e) {}
+  if (!d || !d.titulo || !d.autor) { try { d = merge(d, await fromOL(isbn)); } catch (e) {} }
+  const ya = libros.find(x => x.isbn === isbn);
+  if (d && d.titulo) {
+    fill(d);
+    if ($('#quick').checked) {
+      if (ya) { status('Ya estaba cargado: ' + d.titulo, 'err'); }
+      else if (guardarLibro(true)) { status('✔ Guardado: ' + d.titulo, 'ok'); }
+      limpiar(false);
+      setTimeout(startCam, 1200);
+      return;
+    }
+    status(ya ? 'Ojo: este ISBN ya está en tu biblioteca.' : 'Encontrado. Revisá y guardá.', ya ? 'err' : 'ok');
+  } else {
+    status('No encontré datos para ' + isbn + '. Completalos a mano.', 'err');
+  }
+  $('#formcard').hidden = false;
+  $('#formcard').scrollIntoView({ behavior: 'smooth' });
+}
+
+/* ---------- Formulario ---------- */
+function setCover(u) {
+  const i = $('#cover'); i.dataset.src = u || '';
+  if (u) { i.src = u; i.hidden = false; } else { i.removeAttribute('src'); i.hidden = true; }
+}
+function fill(d) { F.forEach(k => { if (d[k] !== undefined && k !== 'ubicacion') $('#f-' + k).value = d[k]; }); if (d.ubicacion !== undefined) $('#f-ubicacion').value = d.ubicacion; setCover(d.portada || ''); }
+function readForm() { const o = {}; F.forEach(k => o[k] = $('#f-' + k).value.trim()); o.portada = $('#cover').dataset.src || ''; return o; }
+function limpiar(keepStatus) {
+  const u = $('#f-ubicacion').value;
+  F.forEach(k => $('#f-' + k).value = '');
+  $('#f-ubicacion').value = u;
+  setCover(''); editId = null;
+  $('#btn-del').hidden = true; $('#formcard').hidden = true; $('#formtitle').textContent = 'Datos del libro';
+  if (!keepStatus) status('');
+}
+function guardarLibro(auto) {
+  const o = readForm();
+  if (!o.titulo) { alert('Falta el título'); return false; }
+  if (editId) {
+    const i = libros.findIndex(x => x.id === editId);
+    if (i >= 0) libros[i] = Object.assign({}, libros[i], o);
+  } else {
+    if (o.isbn && libros.some(x => x.isbn === o.isbn)) {
+      if (auto) return false;
+      if (!confirm('Ese ISBN ya está cargado. ¿Agregar otro ejemplar igual?')) return false;
+    }
+    libros.unshift(Object.assign({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }, o, { fecha: new Date().toISOString().slice(0, 10) }));
+  }
+  persist(); updateCount(); saveCfg();
+  return true;
+}
+function editar(id) {
+  const b = libros.find(x => x.id === id); if (!b) return;
+  tab('scan');
+  editId = id; fill(b);
+  $('#formcard').hidden = false; $('#btn-del').hidden = false; $('#formtitle').textContent = 'Editar libro';
+  status('');
+  $('#formcard').scrollIntoView();
+}
+
+$('#btn-cam').onclick = () => { if (scanning) { stopCam(); status(''); } else startCam(); };
+$('#btn-buscar').onclick = () => {
+  const i = cleanIsbn($('#isbn-man').value);
+  if (!i) { status('Ese ISBN no es válido (13 dígitos, empieza con 978/979, o 10 dígitos).', 'err'); return; }
+  stopCam(); buscar(i); $('#isbn-man').value = '';
+};
+$('#isbn-man').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btn-buscar').click(); });
+$('#btn-save').onclick = () => {
+  const wasEdit = !!editId;
+  if (guardarLibro(false)) { limpiar(); status('✔ Guardado', 'ok'); if (wasEdit) tab('lib'); }
+};
+$('#btn-cancel').onclick = () => { limpiar(); };
+$('#btn-del').onclick = () => {
+  if (!editId || !confirm('¿Eliminar este libro?')) return;
+  libros = libros.filter(x => x.id !== editId); persist(); updateCount(); limpiar(); tab('lib');
+};
+$('#f-ubicacion').addEventListener('change', saveCfg);
+$('#quick').addEventListener('change', saveCfg);
+
+/* ---------- Lista ---------- */
+function renderList() {
+  const q = norm($('#q').value);
+  const res = libros.filter(b => !q || norm([b.titulo, b.autor, b.editorial, b.isbn, b.ubicacion].join(' ')).includes(q));
+  $('#list').innerHTML = res.length ? res.map(b =>
+    '<div class="item" data-id="' + esc(b.id) + '">' +
+    (b.portada ? '<img loading="lazy" src="' + esc(b.portada) + '" alt="">' : '<div class="ph"></div>') +
+    '<div><b>' + esc(b.titulo) + '</b><small>' + esc([b.autor, b.editorial, b.anio].filter(Boolean).join(' · ')) + '</small>' +
+    '<small>' + esc([b.isbn, b.ubicacion].filter(Boolean).join(' · ')) + '</small></div></div>'
+  ).join('') : '<p class="h">' + (libros.length ? 'Sin resultados.' : 'Todavía no cargaste libros.') + '</p>';
+}
+$('#q').addEventListener('input', renderList);
+$('#list').addEventListener('click', e => { const it = e.target.closest('.item'); if (it) editar(it.dataset.id); });
+
+/* ---------- Exportar ---------- */
+const COLS = [['ISBN', 'isbn'], ['Título', 'titulo'], ['Autor', 'autor'], ['Editorial', 'editorial'], ['Año', 'anio'], ['Páginas', 'paginas'], ['Idioma', 'idioma'], ['Ubicación', 'ubicacion'], ['Notas', 'notas']];
+function csv(sep, excel) {
+  const q = (v, isIsbn) => {
+    v = String(v == null ? '' : v);
+    if (excel && isIsbn && v) return '="' + v + '"';
+    return new RegExp('["\\n\\r' + sep + ']').test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  };
+  const head = COLS.map(c => q(c[0])).join(sep);
+  const rows = libros.slice().reverse().map(b => COLS.map(c => q(b[c[1]], c[1] === 'isbn')).join(sep));
+  return '\ufeff' + [head].concat(rows).join('\r\n');
+}
+function bajar(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+function hay() { if (!libros.length) { alert('No hay libros para exportar.'); return false; } return true; }
+$('#x-csv').onclick = () => hay() && bajar('biblioteca.csv', csv(';'), 'text/csv;charset=utf-8');
+$('#x-csv2').onclick = () => hay() && bajar('biblioteca_coma.csv', csv(','), 'text/csv;charset=utf-8');
+$('#x-xl').onclick = () => hay() && bajar('biblioteca_excel.csv', csv(';', true), 'text/csv;charset=utf-8');
+$('#x-share').onclick = async () => {
+  if (!hay()) return;
+  const f = new File([csv(';')], 'biblioteca.csv', { type: 'text/csv' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [f] })) await navigator.share({ files: [f], title: 'Mi biblioteca' });
+    else alert('Este navegador no permite compartir archivos. Usá Descargar.');
+  } catch (e) {}
+};
+$('#b-exp').onclick = () => hay() && bajar('biblioteca_copia_' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(libros), 'application/json');
+$('#b-imp').onclick = () => $('#b-file').click();
+$('#b-file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const arr = JSON.parse(await f.text());
+    if (!Array.isArray(arr)) throw new Error('formato inválido');
+    const ids = new Set(libros.map(x => x.id));
+    const nuevos = arr.filter(x => x && x.titulo && x.id && !ids.has(x.id));
+    if (!confirm('Se van a agregar ' + nuevos.length + ' libros nuevos (se omiten los repetidos). ¿Seguir?')) return;
+    libros = libros.concat(nuevos); persist(); updateCount(); alert('Listo: ' + nuevos.length + ' libros agregados.');
+  } catch (err) { alert('No se pudo importar: ' + err.message); }
+  e.target.value = '';
+};
+$('#b-clear').onclick = () => {
+  if (!libros.length) return;
+  if (confirm('¿Borrar los ' + libros.length + ' libros? Esto no se puede deshacer.') && confirm('Última confirmación: ¿borrar todo?')) { libros = []; persist(); updateCount(); }
+};
+
+updateCount();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
